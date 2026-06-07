@@ -69,7 +69,7 @@ Sheet: `stock_movement`
 7. ตั้งค่า Execute as: Me
 8. ตั้งค่า Who has access: Anyone
 9. Copy Web app URL
-10. เปิด `config.js` แล้วใส่ URL ใน `API_URL`
+10. นำ URL ไปใส่ใน environment variable `APPS_SCRIPT_URL` (ดูหัวข้อ "รันแบบ Next.js + Vercel" ด้านล่าง)
 
 ## ตั้งค่า LINE group
 
@@ -101,13 +101,44 @@ Group | Item | Opening | Receive | Adjust | Waste | Remaining | Usage | Unit
 
 ใช้สำหรับส่งต่อ/ตรวจย้อนหลัง และใช้ประเมินร่วมกับยอดขายหน้าร้านหรือยอดขาย Delivery ได้
 
-## ใช้กับ GitHub Pages
+## รันแบบ Next.js + Vercel (เวอร์ชันปัจจุบัน)
 
-1. สร้าง repository ใน GitHub
-2. อัปโหลดไฟล์ `index.html`, `styles.css`, `app.js`, `config.js`
-3. ไปที่ Settings > Pages
-4. เลือก branch ที่ใช้ deploy
-5. เปิด URL ของ GitHub Pages แล้วทดลองลง stock
+หน้าเว็บถูกเขียนใหม่เป็น Next.js (App Router) + React และ deploy บน Vercel
+โดยไม่ต้องรัน server เอง การเรียก Apps Script ทำผ่าน API route ฝั่ง server
+(`app/api/movements`, `app/api/usage`) จึงไม่ต้องใช้ `no-cors`/JSONP อีกต่อไป
+และได้ผลลัพธ์ JSON จริงพร้อม error ที่อ่านได้
+
+โครงสร้างหลัก:
+
+```text
+app/                หน้าเว็บ + API routes
+lib/catalog.ts      รายการวัตถุดิบ Raw material / WIP
+lib/appsScript.ts   ตัว proxy เรียก Apps Script ฝั่ง server
+apps-script/        โค้ด Google Apps Script (backend เดิม)
+legacy/             หน้าเว็บ static เดิม (เก็บไว้อ้างอิง)
+```
+
+### รันบนเครื่อง
+
+1. ติดตั้ง dependencies: `npm install`
+2. สร้างไฟล์ `.env.local` จาก `.env.example` แล้วใส่ค่า:
+
+```text
+APPS_SCRIPT_URL=https://script.google.com/macros/s/XXXX/exec
+```
+
+3. รัน dev: `npm run dev` แล้วเปิด `http://localhost:3000`
+4. รัน production build: `npm run build` แล้ว `npm run start`
+
+### Deploy บน Vercel
+
+1. push repo ขึ้น GitHub
+2. ไปที่ vercel.com > New Project > เลือก repo นี้ (Vercel ตรวจ Next.js ให้อัตโนมัติ)
+3. ตั้งค่า Environment Variable: `APPS_SCRIPT_URL` = Web app URL ที่ได้จาก Apps Script
+4. กด Deploy แล้วเปิด URL ที่ Vercel ให้มา
+
+> `APPS_SCRIPT_URL` เป็น env ฝั่ง server เท่านั้น จึงไม่ถูกเปิดเผยใน browser
+> (ต่างจากเวอร์ชัน static เดิมที่ฝัง URL ไว้ใน `config.js`)
 
 ## Flow การใช้งาน
 
