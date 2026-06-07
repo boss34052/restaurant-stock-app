@@ -142,8 +142,27 @@ function compareUsage(params) {
   return { ok: true, rows: result };
 }
 
+function getSpreadsheet() {
+  // Works for both standalone and container-bound scripts.
+  // For a standalone script, set the target Sheet's ID in
+  // Project Settings > Script Properties as SHEET_ID.
+  const sheetId = PropertiesService.getScriptProperties().getProperty("SHEET_ID");
+  if (sheetId) {
+    return SpreadsheetApp.openById(sheetId);
+  }
+
+  const active = SpreadsheetApp.getActiveSpreadsheet();
+  if (active) {
+    return active;
+  }
+
+  throw new Error(
+    "ไม่พบ Spreadsheet: ตั้งค่า SHEET_ID ใน Script Properties หรือสร้างสคริปต์จาก Extensions > Apps Script ภายใน Google Sheet"
+  );
+}
+
 function getMovementSheet() {
-  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const spreadsheet = getSpreadsheet();
   let sheet = spreadsheet.getSheetByName(SHEET_NAME);
 
   if (!sheet) {
