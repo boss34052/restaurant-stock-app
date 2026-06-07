@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Daily Stock Count</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="app-header">
+        <div>
+          <p class="eyebrow">Flow Stock รายวัน</p>
+          <h1>ร้านสุกี้ลิ้นชา</h1>
+          <p class="subhead">นับ Stock ตอนปิดร้าน ส่งเข้า LINE, Google Sheet และ Google Docs</p>
+        </div>
+        <span id="connectionStatus" class="status-pill">ยังไม่ได้ตั้งค่า API</span>
+      </header>
+
+      <section id="homeView" class="view active">
+        <div class="hero-card">
+          <div class="step-badge">1</div>
+          <div>
+            <h2>เลือกหมวดหมู่ที่ต้องการนับ</h2>
+            <p>เริ่มจากนับวัตถุดิบคงเหลือประจำวัน แล้วระบบจะนำข้อมูลไปสรุปยอดใช้และรายงานต่อ</p>
+          </div>
+        </div>
+
+        <div class="category-grid">
+          <button class="category-card raw" type="button" data-category="raw_material">
+            <span class="category-icon">RM</span>
+            <span class="category-title">นับ Stock รายวัน</span>
+            <span class="category-copy">Raw material: เนื้อ หมู ผัก เส้น เครื่องปรุง และวัตถุดิบทั้งหมด</span>
+          </button>
+
+          <button class="category-card wip" type="button" data-category="wip">
+            <span class="category-icon">WIP</span>
+            <span class="category-title">นับ Stock WIP รายวัน</span>
+            <span class="category-copy">Work in process: ของเตรียมแล้ว น้ำซุป ของพร้อมขาย</span>
+          </button>
+        </div>
+
+        <div class="flow-strip">
+          <div><strong>1</strong><span>นับ Stock</span></div>
+          <div><strong>2</strong><span>ส่ง LINE + Sheet</span></div>
+          <div><strong>3</strong><span>เทียบยอดขาย / Delivery</span></div>
+          <div><strong>4</strong><span>สรุปรายงาน</span></div>
+        </div>
+      </section>
+
+      <section id="userView" class="view">
+        <button class="back-button" type="button" data-back="home">กลับ</button>
+        <div class="panel">
+          <div class="section-head compact">
+            <div>
+              <p class="eyebrow">ผู้บันทึกข้อมูล</p>
+              <h2 id="userViewTitle">กรอกชื่อก่อนเริ่มนับ</h2>
+            </div>
+          </div>
+
+          <form id="userForm" class="user-form">
+            <label>
+              ชื่อ
+              <input id="firstName" name="first_name" type="text" autocomplete="given-name" required />
+            </label>
+            <label>
+              นามสกุล
+              <input id="lastName" name="last_name" type="text" autocomplete="family-name" required />
+            </label>
+            <label>
+              วันที่นับ
+              <input id="stockDate" name="date" type="date" required />
+            </label>
+            <label>
+              สาขา
+              <input id="branch" name="branch" type="text" value="สาขาหลัก" required />
+            </label>
+            <button class="primary-action" type="submit">ไปหน้ากรอก Stock</button>
+          </form>
+        </div>
+      </section>
+
+      <section id="countView" class="view">
+        <button class="back-button" type="button" data-back="user">กลับ</button>
+        <form id="batchForm" class="panel count-panel">
+          <div class="section-head">
+            <div>
+              <p id="countEyebrow" class="eyebrow">Daily Count</p>
+              <h2 id="countTitle">นับ Stock รายวัน</h2>
+              <p id="countMeta" class="subhead"></p>
+            </div>
+            <label class="movement-select">
+              ประเภทการนับ
+              <select id="movementType" name="movement_type">
+                <option value="closing_stock">ปิดวัน / ของเหลือปลายวัน</option>
+                <option value="opening_stock">เปิดวัน / เริ่มต้นวัน</option>
+                <option value="receive">รับเข้า</option>
+                <option value="adjustment">ปรับยอด</option>
+                <option value="waste">เสีย/ทิ้ง</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="table-hint">
+            กรอกจำนวนตามวัตถุดิบที่นับได้ ระบบจะบันทึกเฉพาะรายการที่กรอกจำนวน
+          </div>
+
+          <div id="itemList" class="item-list"></div>
+
+          <div class="sticky-actions">
+            <button class="primary-action" type="submit">บันทึกทั้งหมดและส่งรายงาน</button>
+            <button id="clearItems" class="secondary-action" type="button">ล้างจำนวน</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="reportView" class="view">
+        <div class="panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Usage Compare</p>
+              <h2>เทียบยอดใช้จาก stock_movement</h2>
+            </div>
+          </div>
+
+          <form id="compareForm" class="compare-form">
+            <label>
+              วันที่เริ่ม
+              <input id="fromDate" name="from_date" type="date" required />
+            </label>
+            <label>
+              วันที่สิ้นสุด
+              <input id="toDate" name="to_date" type="date" required />
+            </label>
+            <label>
+              สาขา
+              <input id="compareBranch" name="branch" type="text" value="สาขาหลัก" required />
+            </label>
+            <button type="submit">คำนวณยอดใช้</button>
+          </form>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>กลุ่ม</th>
+                  <th>สินค้า</th>
+                  <th>เปิดวัน</th>
+                  <th>รับเข้า</th>
+                  <th>ปิดวัน</th>
+                  <th>ยอดใช้</th>
+                  <th>หน่วย</th>
+                </tr>
+              </thead>
+              <tbody id="usageRows">
+                <tr>
+                  <td colspan="7" class="empty">เลือกวันที่เพื่อดูรายงาน</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="./config.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
