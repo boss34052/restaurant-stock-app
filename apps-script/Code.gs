@@ -42,6 +42,10 @@ function doPost(e) {
       return jsonResponse(compareUsage(body));
     }
 
+    if (body.action === "addSnapshot") {
+      return jsonResponse(addSnapshot(body));
+    }
+
     throw new Error("Unknown action");
   } catch (error) {
     return jsonResponse({ ok: false, error: error.message });
@@ -140,6 +144,85 @@ function compareUsage(params) {
     .sort((a, b) => a.item_name.localeCompare(b.item_name));
 
   return { ok: true, rows: result };
+}
+
+// ---- Wide snapshot model (one row per submission) -------------------------
+// Raw material and WIP are written to separate tabs. Items flagged hasImage
+// get a photo uploaded to Drive, with the share link stored in the next column.
+
+var SNAPSHOT_TABS = { raw_material: "raw_material", wip: "wip" };
+
+function addSnapshot(payload) {
+  var group = payload.stock_group === "wip" ? "wip" : "raw_material";
+  var items = payload.items || [];
+  if (!items.length) {
+    throw new Error("ไม่มีรายการสินค้า");
+  }
+  if (!payload.date || !payload.user) {
+    throw new Error("กรุณาระบุวันที่และชื่อผู้บันทึก");
+  }
+
+  var ss = getSpreadsheet();
+  var sheetName = SNAPSHOT_TABS[group];
+  var sheet = ss.getSheetByName(sheetName);
+
+  // Build the header from the item list (timestamp, date, user, then each
+  // item as "name (unit)" + an "แนบรูปประกอบ" column when it has an image).
+  var header = ["ประทับเวลา", "วันที่กรอกข้อมูล", "ชื่อผู้กรอก / ผู้ตรวจนับ"];
+  items.forEach(function (it) {
+    header.push(it.unit ? it.name + " (" + it.unit + ")" : it.name);
+    if (it.hasImage) header.push("แนบรูปประกอบ");
+  });
+
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+    sheet.appendRow(header);
+  } else if (sheet.getLastRow() === 0) {
+    sheet.appendRow(header);
+  }
+
+  // Build the data row in the same order as the header.
+  var row = [new Date(), payload.date, payload.user];
+  var savedCount = 0;
+  items.forEach(function (it) {
+    var hasQty = it.quantity !== "" && it.quantity !== null && it.quantity !== undefined;
+    row.push(hasQty ? Number(it.quantity) : "");
+    if (hasQty) savedCount++;
+    if (it.hasImage) {
+      var link = "";
+      if (it.image) {
+        link = saveImageToDrive(it.image, payload.date + " - " + it.name + " - " + payload.user);
+      }
+      row.push(link);
+    }
+  });
+
+  sheet.getRange(sheet.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+  return { ok: true, saved: savedCount, sheet: sheetName };
+}
+
+function saveImageToDrive(dataUrl, name) {
+  var match = String(dataUrl).match(/^data:([^;]+);base64,(.*)$/);
+  if (!match) return "";
+  var contentType = match[1];
+  var bytes = Utilities.base64Decode(match[2]);
+  var ext = contentType.indexOf("png") !== -1 ? ".png" : ".jpg";
+  var blob = Utilities.newBlob(bytes, contentType, name + ext);
+  var folder = getPhotoFolder();
+  var file = folder.createFile(blob);
+  try {
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  } catch (e) {
+    // Sharing may be restricted by the Workspace domain; the link is still
+    // stored and accessible to anyone the file is shared with.
+  }
+  return file.getUrl();
+}
+
+function getPhotoFolder() {
+  var name = "Stock Photos";
+  var it = DriveApp.getFoldersByName(name);
+  return it.hasNext() ? it.next() : DriveApp.createFolder(name);
 }
 
 function getSpreadsheet() {
