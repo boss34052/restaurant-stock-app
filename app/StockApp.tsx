@@ -40,8 +40,7 @@ export default function StockApp({ apiConfigured }: { apiConfigured: boolean }) 
   const [view, setView] = useState<View>("home");
   const [category, setCategory] = useState<StockGroup | "">("");
 
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
+  const [name, setName] = useState("");
   const [stockDate, setStockDate] = useState("");
 
   const [itemInputs, setItemInputs] = useState<Record<string, ItemInput>>({});
@@ -51,7 +50,7 @@ export default function StockApp({ apiConfigured }: { apiConfigured: boolean }) 
     setStockDate(todayIso());
   }, []);
 
-  const user = `${firstName} ${lastName}`.trim();
+  const user = name.trim();
   const catalog = category ? stockCatalog[category] : null;
   const items = useMemo(() => catalog?.items ?? [], [catalog]);
   const filledCount = useMemo(
@@ -203,20 +202,12 @@ export default function StockApp({ apiConfigured }: { apiConfigured: boolean }) 
               </CardHeader>
               <CardContent>
                 <form className="grid gap-4 sm:grid-cols-2" onSubmit={submitUser}>
-                  <Field label="ชื่อ">
+                  <Field label="ชื่อผู้ตรวจนับ">
                     <Input
-                      autoComplete="given-name"
+                      autoComplete="name"
                       required
-                      value={firstName}
-                      onChange={(e) => setFirstName(e.target.value)}
-                    />
-                  </Field>
-                  <Field label="นามสกุล">
-                    <Input
-                      autoComplete="family-name"
-                      required
-                      value={lastName}
-                      onChange={(e) => setLastName(e.target.value)}
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
                     />
                   </Field>
                   <Field label="วันที่นับ">
@@ -227,7 +218,6 @@ export default function StockApp({ apiConfigured }: { apiConfigured: boolean }) 
                       onChange={(e) => setStockDate(e.target.value)}
                     />
                   </Field>
-                  <div className="hidden sm:block" />
                   <Button type="submit" size="lg" className="sm:col-span-2">
                     ไปหน้ากรอก Stock <ArrowRight />
                   </Button>
