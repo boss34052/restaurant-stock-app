@@ -225,6 +225,217 @@ function getPhotoFolder() {
   return it.hasNext() ? it.next() : DriveApp.createFolder(name);
 }
 
+// ===========================================================================
+// REPORT TABS — run setupReports() once from the editor to (re)build them.
+// They use LIVE formulas referencing the data tabs (raw_material, wip, import)
+// plus two input tabs you fill in: sales_daily and expected_usage.
+// Re-run any time after adding new items; it reads item names from the data
+// tab headers so it stays in sync. Save at least one row in each section first.
+// ===========================================================================
+
+var REPORT_MAX_ROW = 2000; // bounded range for FILTER performance
+
+function setupReports() {
+  var ss = getSpreadsheet();
+  ensureInputTabs_(ss);
+  buildDashboard_(ss);
+  buildUsageReport_(ss);
+  buildDefectsReport_(ss);
+  buildStockRemaining_(ss);
+  return { ok: true, message: "Report tabs created/updated" };
+}
+
+function ensureInputTabs_(ss) {
+  if (!ss.getSheetByName("sales_daily")) {
+    var s = ss.insertSheet("sales_daily");
+    s.getRange(1, 1, 1, 3).setValues([
+      ["date (yyyy-mm-dd)", "ยอดขาย (บาท)", "จำนวนลูกค้า"],
+    ]);
+    s.setFrozenRows(1);
+  }
+  if (!ss.getSheetByName("expected_usage")) {
+    var e = ss.insertSheet("expected_usage");
+    e.getRange(1, 1, 1, 3).setValues([
+      ["date (yyyy-mm-dd)", "item (ชื่อ + หน่วย ตรงกับหัวคอลัมน์ raw_material)", "expected_usage (จากระบบ POS)"],
+    ]);
+    e.setFrozenRows(1);
+  }
+}
+
+// Reads the item column headers of a data tab, skipping the 3 meta columns
+// and any "แนบรูปประกอบ" image columns.
+function readItemHeaders_(ss, tabName) {
+  var sh = ss.getSheetByName(tabName);
+  if (!sh || sh.getLastColumn() < 4) return [];
+  var hdr = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  var items = [];
+  for (var c = 3; c < hdr.length; c++) {
+    var name = String(hdr[c]).trim();
+    if (!name || name === "แนบรูปประกอบ") continue;
+    items.push(name);
+  }
+  return items;
+}
+
+function resetSheet_(ss, name) {
+  var sh = ss.getSheetByName(name);
+  if (sh) sh.clear();
+  else sh = ss.insertSheet(name);
+  return sh;
+}
+
+// Latest value for an item on a specific date in a wide data tab.
+function fLatestOnDate_(tab, itemRef, dateRef) {
+  return (
+    "=IFERROR(INDEX(" + tab + "!$A:$ZZ, MAX(FILTER(ROW(" + tab + "!$B$2:$B$" + REPORT_MAX_ROW +
+    "), " + tab + "!$B$2:$B$" + REPORT_MAX_ROW + "=" + dateRef + ")), MATCH(" + itemRef + ", " + tab + "!$1:$1, 0)),0)"
+  );
+}
+
+// Latest value for an item across all dates (most recent row).
+function fLatestAny_(tab, itemRef) {
+  return (
+    "=IFERROR(INDEX(" + tab + "!$A:$ZZ, MAX(FILTER(ROW(" + tab + "!$B$2:$B$" + REPORT_MAX_ROW +
+    "), " + tab + "!$B$2:$B$" + REPORT_MAX_ROW + "<>\"\")), MATCH(" + itemRef + ", " + tab + "!$1:$1, 0)),0)"
+  );
+}
+
+function buildDashboard_(ss) {
+  var sh = resetSheet_(ss, "dashboard");
+  sh.getRange("A1").setValue("วันที่ (yyyy-mm-dd)");
+  sh.getRange("B1").setFormula('=TEXT(TODAY(),"yyyy-mm-dd")');
+  sh.getRange("A2").setValue("วันก่อนหน้า");
+  sh.getRange("B2").setFormula('=TEXT(DATEVALUE($B$1)-1,"yyyy-mm-dd")');
+
+  var labels = [
+    "ยอดขาย (บาท)",
+    "จำนวนลูกค้า",
+    "จำนวนรายการผิดปกติ (≥10%)",
+    "รวมใช้จริง (นับ)",
+    "รวมใช้ตามระบบ (POS)",
+  ];
+  var formulas = [
+    "=IFERROR(SUMIF(sales_daily!$A:$A,$B$1,sales_daily!$B:$B),0)",
+    "=IFERROR(SUMIF(sales_daily!$A:$A,$B$1,sales_daily!$C:$C),0)",
+    '=COUNTIF(usage_rm!$H:$H,"⚠️")',
+    "=SUM(usage_rm!$E:$E)",
+    "=SUM(usage_rm!$F:$F)",
+  ];
+  sh.getRange(4, 1, labels.length, 1).setValues(labels.map(function (l) { return [l]; }));
+  sh.getRange(4, 2, formulas.length, 1).setFormulas(formulas.map(function (f) { return [f]; }));
+  sh.setColumnWidth(1, 230);
+  sh.getRange("A4:A8").setFontWeight("bold");
+}
+
+function buildUsageReport_(ss) {
+  var sh = resetSheet_(ss, "usage_rm");
+  sh.getRange("A1").setValue("วันที่ (yyyy-mm-dd)");
+  sh.getRange("B1").setFormula("=dashboard!$B$1");
+  sh.getRange("A2").setValue("วันก่อนหน้า");
+  sh.getRange("B2").setFormula('=TEXT(DATEVALUE($B$1)-1,"yyyy-mm-dd")');
+
+  var headers = ["สินค้า", "คงเหลือเมื่อวาน", "รับเข้า", "คงเหลือวันนี้", "ใช้จริง (นับ)", "ใช้ตามระบบ (POS)", "%ต่าง", "ผิดปกติ"];
+  sh.getRange(4, 1, 1, headers.length).setValues([headers]);
+  sh.getRange(4, 1, 1, headers.length).setFontWeight("bold");
+  sh.setFrozenRows(4);
+
+  var items = readItemHeaders_(ss, "raw_material");
+  if (!items.length) {
+    sh.getRange(5, 1).setValue("ยังไม่มีข้อมูล raw_material — บันทึก Stock รายวันก่อน แล้วรัน setupReports อีกครั้ง");
+    return;
+  }
+
+  var start = 5;
+  sh.getRange(start, 1, items.length, 1).setValues(items.map(function (n) { return [n]; }));
+
+  var fB = [], fC = [], fD = [], fE = [], fF = [], fG = [], fH = [];
+  for (var i = 0; i < items.length; i++) {
+    var r = start + i;
+    var nm = "$A" + r;
+    fB.push([fLatestOnDate_("raw_material", nm, "$B$2")]);
+    fC.push(["=IFERROR(SUMIF(import!$B:$B,$B$1, INDEX(import!$A:$ZZ,0,MATCH(" + nm + ", import!$1:$1,0))),0)"]);
+    fD.push([fLatestOnDate_("raw_material", nm, "$B$1")]);
+    fE.push(["=$B" + r + "+$C" + r + "-$D" + r]);
+    fF.push(["=IFERROR(SUMIFS(expected_usage!$C:$C, expected_usage!$A:$A, $B$1, expected_usage!$B:$B, " + nm + "),0)"]);
+    fG.push(["=IF($F" + r + "=0,\"\",ABS($E" + r + "-$F" + r + ")/$F" + r + ")"]);
+    fH.push(["=IF(AND($F" + r + "<>0,$G" + r + ">=0.1),\"⚠️\",\"\")"]);
+  }
+  sh.getRange(start, 2, items.length, 1).setFormulas(fB);
+  sh.getRange(start, 3, items.length, 1).setFormulas(fC);
+  sh.getRange(start, 4, items.length, 1).setFormulas(fD);
+  sh.getRange(start, 5, items.length, 1).setFormulas(fE);
+  sh.getRange(start, 6, items.length, 1).setFormulas(fF);
+  sh.getRange(start, 7, items.length, 1).setFormulas(fG);
+  sh.getRange(start, 8, items.length, 1).setFormulas(fH);
+  sh.getRange(start, 7, items.length, 1).setNumberFormat("0.0%");
+  sh.setColumnWidth(1, 240);
+}
+
+function buildDefectsReport_(ss) {
+  var sh = resetSheet_(ss, "defects");
+  sh.getRange("A1").setValue("สรุปของเสีย (Defects)");
+  sh.getRange("A2").setValue("วันที่ (yyyy-mm-dd)");
+  sh.getRange("B2").setFormula("=dashboard!$B$1");
+  sh.getRange(4, 1, 1, 3).setValues([["รายการของเสีย", "ปริมาณวันนี้", "รวมสะสมทั้งหมด"]]);
+  sh.getRange(4, 1, 1, 3).setFontWeight("bold");
+
+  var items = readItemHeaders_(ss, "wip").filter(function (n) { return n.indexOf("ของเสีย") === 0; });
+  var start = 5;
+  if (!items.length) {
+    sh.getRange(start, 1).setValue("ยังไม่มีข้อมูลของเสียใน wip — บันทึก WIP ก่อน แล้วรัน setupReports อีกครั้ง");
+    return;
+  }
+  sh.getRange(start, 1, items.length, 1).setValues(items.map(function (n) { return [n]; }));
+  var fB = [], fC = [];
+  for (var i = 0; i < items.length; i++) {
+    var r = start + i;
+    var nm = "$A" + r;
+    fB.push([fLatestOnDate_("wip", nm, "$B$2")]);
+    fC.push(["=IFERROR(SUM(INDEX(wip!$A:$ZZ,0,MATCH(" + nm + ", wip!$1:$1,0))),0)"]);
+  }
+  sh.getRange(start, 2, items.length, 1).setFormulas(fB);
+  sh.getRange(start, 3, items.length, 1).setFormulas(fC);
+  sh.setColumnWidth(1, 240);
+}
+
+function buildStockRemaining_(ss) {
+  var sh = resetSheet_(ss, "stock_remaining");
+  sh.getRange("A1").setValue("คงเหลือล่าสุด (Stock Remaining)");
+
+  var rm = readItemHeaders_(ss, "raw_material");
+  sh.getRange(3, 1, 1, 2).setValues([["RM — วัตถุดิบคงเหลือ", "คงเหลือ"]]);
+  sh.getRange(3, 1, 1, 2).setFontWeight("bold");
+  var r = 4;
+  if (rm.length) {
+    sh.getRange(r, 1, rm.length, 1).setValues(rm.map(function (n) { return [n]; }));
+    var f = [];
+    for (var i = 0; i < rm.length; i++) {
+      f.push([fLatestAny_("raw_material", "$A" + (r + i))]);
+    }
+    sh.getRange(r, 2, rm.length, 1).setFormulas(f);
+    r = r + rm.length + 2;
+  } else {
+    sh.getRange(r, 1).setValue("ยังไม่มีข้อมูล raw_material");
+    r = r + 2;
+  }
+
+  var wip = readItemHeaders_(ss, "wip");
+  sh.getRange(r, 1, 1, 2).setValues([["WIP — คงเหลือ", "คงเหลือ"]]);
+  sh.getRange(r, 1, 1, 2).setFontWeight("bold");
+  var wr = r + 1;
+  if (wip.length) {
+    sh.getRange(wr, 1, wip.length, 1).setValues(wip.map(function (n) { return [n]; }));
+    var fw = [];
+    for (var i = 0; i < wip.length; i++) {
+      fw.push([fLatestAny_("wip", "$A" + (wr + i))]);
+    }
+    sh.getRange(wr, 2, wip.length, 1).setFormulas(fw);
+  } else {
+    sh.getRange(wr, 1).setValue("ยังไม่มีข้อมูล wip");
+  }
+  sh.setColumnWidth(1, 240);
+}
+
 function getSpreadsheet() {
   // Works for both standalone and container-bound scripts.
   // For a standalone script, set the target Sheet's ID in
