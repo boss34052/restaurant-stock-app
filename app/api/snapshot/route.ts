@@ -11,7 +11,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { stock_group, date, user, items } = body ?? {};
 
-    if (stock_group !== "raw_material" && stock_group !== "wip") {
+    if (!["raw_material", "wip", "import"].includes(stock_group)) {
       return NextResponse.json(
         { ok: false, error: "stock_group ไม่ถูกต้อง" },
         { status: 400 },

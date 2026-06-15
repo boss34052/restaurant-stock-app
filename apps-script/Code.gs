@@ -150,10 +150,10 @@ function compareUsage(params) {
 // Raw material and WIP are written to separate tabs. Items flagged hasImage
 // get a photo uploaded to Drive, with the share link stored in the next column.
 
-var SNAPSHOT_TABS = { raw_material: "raw_material", wip: "wip" };
+var SNAPSHOT_TABS = { raw_material: "raw_material", wip: "wip", import: "import" };
 
 function addSnapshot(payload) {
-  var group = payload.stock_group === "wip" ? "wip" : "raw_material";
+  var group = SNAPSHOT_TABS[payload.stock_group] ? payload.stock_group : "raw_material";
   var items = payload.items || [];
   if (!items.length) {
     throw new Error("ไม่มีรายการสินค้า");

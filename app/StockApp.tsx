@@ -13,6 +13,7 @@ import {
   Loader2,
   Package,
   Send,
+  Truck,
   X,
 } from "lucide-react";
 
@@ -32,9 +33,16 @@ import {
 } from "@/components/ui/card";
 
 type View = "home" | "user" | "count";
+type Tone = "raw" | "wip" | "import";
 type ItemInput = { quantity: string; image?: string };
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
+
+const TONE: Record<StockGroup, Tone> = {
+  raw_material: "raw",
+  wip: "wip",
+  import: "import",
+};
 
 export default function StockApp({ apiConfigured }: { apiConfigured: boolean }) {
   const [view, setView] = useState<View>("home");
@@ -52,6 +60,7 @@ export default function StockApp({ apiConfigured }: { apiConfigured: boolean }) 
 
   const user = name.trim();
   const catalog = category ? stockCatalog[category] : null;
+  const tone: Tone = category ? TONE[category] : "raw";
   const items = useMemo(() => catalog?.items ?? [], [catalog]);
   const filledCount = useMemo(
     () => Object.values(itemInputs).filter((i) => i.quantity !== "").length,
@@ -160,7 +169,7 @@ export default function StockApp({ apiConfigured }: { apiConfigured: boolean }) 
 
         {/* HOME */}
         {view === "home" && (
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <CategoryCard
               tone="raw"
               icon={<Beef className="size-7" />}
@@ -178,8 +187,18 @@ export default function StockApp({ apiConfigured }: { apiConfigured: boolean }) 
               title="นับ Stock WIP รายวัน"
               copy="ของเตรียมแล้ว ชุดเกาเหลา และรายการของเสีย (waste)"
               count={stockCatalog.wip.items.length}
-              photo={0}
+              photo={stockCatalog.wip.items.filter((i) => i.hasImage).length}
               onClick={() => goToCategory("wip")}
+            />
+            <CategoryCard
+              tone="import"
+              icon={<Truck className="size-7" />}
+              tag="Raw Material Import"
+              title="รับเข้าวัตถุดิบ"
+              copy="บันทึกวัตถุดิบที่รับเข้า (เนื้อสัตว์) พร้อมแนบรูปทุกตัว"
+              count={stockCatalog.import.items.length}
+              photo={stockCatalog.import.items.filter((i) => i.hasImage).length}
+              onClick={() => goToCategory("import")}
             />
           </div>
         )}
@@ -192,7 +211,7 @@ export default function StockApp({ apiConfigured }: { apiConfigured: boolean }) 
             </Button>
             <Card>
               <CardHeader>
-                <Badge variant={category === "wip" ? "wip" : "raw"} className="w-fit">
+                <Badge variant={tone} className="w-fit">
                   {catalog?.eyebrow}
                 </Badge>
                 <CardTitle className="text-xl">
@@ -238,10 +257,7 @@ export default function StockApp({ apiConfigured }: { apiConfigured: boolean }) 
                 <CardHeader>
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
-                      <Badge
-                        variant={category === "wip" ? "wip" : "raw"}
-                        className="mb-2"
-                      >
+                      <Badge variant={tone} className="mb-2">
                         {catalog?.eyebrow}
                       </Badge>
                       <CardTitle className="text-xl">{catalog?.title}</CardTitle>
@@ -262,8 +278,7 @@ export default function StockApp({ apiConfigured }: { apiConfigured: boolean }) 
                 <CardContent className="space-y-2">
                   <div className="mb-2 rounded-lg border border-primary/20 bg-primary/5 px-4 py-2.5 text-sm text-muted-foreground">
                     กรอกเฉพาะรายการที่นับได้ — ระบบบันทึกทุกคอลัมน์ แต่นับเฉพาะช่องที่กรอกจำนวน
-                    {category === "raw_material" &&
-                      " · รายการเนื้อ/อาหารทะเลแนบรูปได้"}
+                    {items.some((i) => i.hasImage) && " · รายการที่มีไอคอนกล้องแนบรูปได้"}
                   </div>
 
                   {items.map((item) => {
@@ -443,7 +458,7 @@ function CategoryCard({
   photo,
   onClick,
 }: {
-  tone: "raw" | "wip";
+  tone: Tone;
   icon: React.ReactNode;
   tag: string;
   title: string;
@@ -452,22 +467,30 @@ function CategoryCard({
   photo: number;
   onClick: () => void;
 }) {
+  const toneGradient =
+    tone === "raw"
+      ? "bg-gradient-to-br from-raw/12 to-raw/5"
+      : tone === "wip"
+        ? "bg-gradient-to-br from-wip/12 to-wip/5"
+        : "bg-gradient-to-br from-primary/12 to-primary/5";
+  const toneSolid =
+    tone === "raw" ? "bg-raw" : tone === "wip" ? "bg-wip" : "bg-primary";
+  const toneText =
+    tone === "raw" ? "text-raw" : tone === "wip" ? "text-wip" : "text-primary";
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
         "group relative overflow-hidden rounded-2xl border p-6 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:outline-none",
-        tone === "raw"
-          ? "bg-gradient-to-br from-raw/12 to-raw/5"
-          : "bg-gradient-to-br from-wip/12 to-wip/5",
+        toneGradient,
       )}
     >
       <div className="flex items-start justify-between">
         <div
           className={cn(
             "grid size-14 place-items-center rounded-2xl text-white shadow-sm",
-            tone === "raw" ? "bg-raw" : "bg-wip",
+            toneSolid,
           )}
         >
           {icon}
@@ -484,7 +507,7 @@ function CategoryCard({
       <p
         className={cn(
           "mt-5 text-xs font-semibold uppercase tracking-wider",
-          tone === "raw" ? "text-raw" : "text-wip",
+          toneText,
         )}
       >
         {tag}
